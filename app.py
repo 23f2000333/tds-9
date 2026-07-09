@@ -6,7 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import OpenAI
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# AI Pipe OpenAI-compatible endpoint
+client = OpenAI(
+    api_key=os.getenv("AIPIPE_TOKEN"),
+    base_url="https://aipipe.org/openai/v1"
+)
 
 app = FastAPI()
 
@@ -35,27 +39,27 @@ def rank(req: RankRequest):
         input=texts
     )
 
-    embeddings = [np.array(x.embedding, dtype=np.float32)
-                  for x in response.data]
+    embeddings = [
+        np.asarray(x.embedding, dtype=np.float32)
+        for x in response.data
+    ]
 
     query_embedding = embeddings[0]
-
     candidate_embeddings = embeddings[1:]
 
-    query_embedding /= np.linalg.norm(query_embedding)
+    # Normalize query once
+    query_embedding = query_embedding / np.linalg.norm(query_embedding)
 
     scores = []
 
-    for i, emb in enumerate(candidate_embeddings):
-
-        emb /= np.linalg.norm(emb)
-
+    for idx, emb in enumerate(candidate_embeddings):
+        emb = emb / np.linalg.norm(emb)
         score = float(np.dot(query_embedding, emb))
+        scores.append((score, idx))
 
-        scores.append((score, i))
+    # Highest cosine similarity first
+    scores.sort(key=lambda x: x[0], reverse=True)
 
-    scores.sort(reverse=True)
+    top3 = [idx for _, idx in scores[:3]]
 
-    ranking = [i for _, i in scores[:3]]
-
-    return {"ranking": ranking}
+    return {"ranking": top3}
